@@ -1,2 +1,5 @@
 venv/
 *.json
+.env
+__pycache__/
+kernel_process.pid
