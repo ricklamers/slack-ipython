@@ -1,5 +1,3 @@
-[![PyPI](https://img.shields.io/pypi/v/slack-ipython.svg)](https://pypi.org/project/slack-ipython/)
-
 # Slack IPython bot 🤯
 
 One Slack bot to rule them all. PyBot. Just send Python code as a message.
@@ -9,6 +7,8 @@ One Slack bot to rule them all. PyBot. Just send Python code as a message.
 ## Install
 
 ```pip install slack-ipython```
+
+[![PyPI](https://img.shields.io/pypi/v/slack-ipython.svg)](https://pypi.org/project/slack-ipython/)
 
 To start the bot, simply run: 
 
