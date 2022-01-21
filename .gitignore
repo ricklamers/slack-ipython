@@ -4,3 +4,4 @@ venv/
 __pycache__/
 process_pids/
 image_cache/
+.vscode/
