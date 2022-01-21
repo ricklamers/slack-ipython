@@ -3,102 +3,122 @@ import subprocess
 import os
 import queue
 import json
-import re
-
+import signal
+import threading
+import time
+import atexit
 
 from time import sleep
-
 from jupyter_client import BlockingKernelClient
 
-import snakemq.link
-import snakemq.packeter
-import snakemq.messaging
-import snakemq.message
+import config
+import utils
 
-from config import IDENT_KERNEL_MANAGER, IDENT_MAIN, KERNEL_PID_FILENAME, SNAKEMQ_PORT, get_logger
+# Set up globals
+messaging = None
+logger = config.get_logger()
 
-# Set up global hook
-my_messaging = None
-kernel_process = None
+class FlushingThread(threading.Thread):
+    def __init__(self, kc, kill_sema):
+        threading.Thread.__init__(self)
+        self.kill_sema = kill_sema
+        self.kc = kc
 
-logger = get_logger()
+    def run(self):
+        logger.info("Running message flusher...")
+        while True:
 
+            if self.kill_sema.acquire(blocking=False):
+                logger.info("Sema was released to kill thread")
+                sys.exit()
 
-def escape_ansi(line):
-    ansi_escape = re.compile(r"(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]")
-    return ansi_escape.sub("", line)
+            flush_kernel_msgs(self.kc)
+            time.sleep(1)
 
-
-def clean_exit():
-    logger.info("Cleaned up kernel_process")
-    kernel_process.kill()
-    sys.exit()
+def cleanup_kernels():
+    for filename in os.listdir(config.KERNEL_PID_DIR):
+        fp = os.path.join(config.KERNEL_PID_DIR, filename)
+        if os.path.isfile(fp):
+            try:
+                pid = int(filename.split(".pid")[0])
+                logger.debug("Killing PID %s" % pid)
+                os.kill(pid, signal.SIGKILL)
+                os.remove(fp)
+            except Exception as e:
+                logger.debug(e)
 
 
 def start_snakemq(kc):
-    global my_messaging
+    global messaging
 
-    my_link = snakemq.link.Link()
-    my_packeter = snakemq.packeter.Packeter(my_link)
-    my_messaging = snakemq.messaging.Messaging(IDENT_KERNEL_MANAGER, "", my_packeter)
-    my_link.add_connector(("localhost", SNAKEMQ_PORT))
+    messaging, link = utils.init_snakemq(config.IDENT_KERNEL_MANAGER, "connect")
 
     def on_recv(conn, ident, message):
-
-        logger.debug(ident, message)
-
-        if ident == IDENT_MAIN:
+        if ident == config.IDENT_MAIN:
             message = json.loads(message.data.decode("utf-8"))
 
             if message["type"] == "execute":
                 logger.debug("Executing command: %s" % message["value"])
                 kc.execute(message["value"])
+                # Try direct flush with default wait (0.2)
                 flush_kernel_msgs(kc)
-            if message["type"] == "flush":
-                flush_kernel_msgs(kc, tries=1)
-            if message["type"] == "exit":
-                logger.debug("Abc")
-                clean_exit()
 
-    my_messaging.on_message_recv.add(on_recv)
+    messaging.on_message_recv.add(on_recv)
+
+    start_flusher(kc)
+    
+    # Send alive
+    utils.send_json(messaging, {"type": "status", "value": "ready"}, config.IDENT_MAIN)
+
     logger.info("Starting snakemq loop")
-    my_link.loop()
+    link.loop()
 
 
-def send_message(message, type="message"):
-    message = snakemq.message.Message(
-        json.dumps({"type": type, "value": message}).encode("utf-8"), ttl=600
-    )
-    my_messaging.send_message(IDENT_MAIN, message)
+def start_flusher(kc):
+    # Start FlushMessenger
+    kill_sema = threading.Semaphore()
+    kill_sema.acquire()
+    t = FlushingThread(kc, kill_sema)
+    t.start()
+
+    def end_thread():
+        kill_sema.release()
+
+    atexit.register(end_thread)
 
 
-def flush_kernel_msgs(kc, tries=10):
+def send_message(message, message_type="message"):
+    utils.send_json(messaging, {"type": message_type, "value": message}, config.IDENT_MAIN)
+
+
+def flush_kernel_msgs(kc, tries=1, timeout=0.2):
     try:
         hit_empty = 0
 
         while True:
             try:
-                msg = kc.get_iopub_msg(timeout=0.1)
+                msg = kc.get_iopub_msg(timeout=timeout)
                 if msg["msg_type"] == "execute_result":
                     if "text/plain" in msg["content"]["data"]:
                         send_message(
                             msg["content"]["data"]["text/plain"], "message_raw"
                         )
                 if msg["msg_type"] == "display_data":
-                    if "text/plain" in msg["content"]["data"]:
-                        send_message(msg["content"]["data"]["text/plain"])
                     if "image/png" in msg["content"]["data"]:
                         # Convert to Slack upload
                         send_message(
-                            "<img src='data:image/png;base64,%s'>"
-                            % msg["content"]["data"]["image/png"]
+                            msg["content"]["data"]["image/png"],
+                            message_type="image/png"
                         )
+                    elif "text/plain" in msg["content"]["data"]:
+                        send_message(msg["content"]["data"]["text/plain"])
+                    
                 elif msg["msg_type"] == "stream":
                     logger.debug("Received stream output %s" % msg["content"]["text"])
                     send_message(msg["content"]["text"])
                 elif msg["msg_type"] == "error":
                     send_message(
-                        escape_ansi("\n".join(msg["content"]["traceback"])),
+                        utils.escape_ansi("\n".join(msg["content"]["traceback"])),
                         "message_raw",
                     )
             except queue.Empty:
@@ -107,14 +127,14 @@ def flush_kernel_msgs(kc, tries=10):
                     # Empty queue for one second, give back control
                     break
             except Exception as e:
-                logger.debug(e)
+                logger.debug(f"{e} [{type(e)}")
+                break
     except Exception as e:
-        logger.debug(e)
+        logger.debug(f"{e} [{type(e)}")
 
 
 def start_kernel():
-    global kernel_process
-    kernel_connection_file = os.path.join(os.getcwd(), "test.json")
+    kernel_connection_file = os.path.join(os.getcwd(), "kernel_connection_file.json")
 
     if os.path.isfile(kernel_connection_file):
         os.remove(kernel_connection_file)
@@ -131,8 +151,10 @@ def start_kernel():
         ]
     )
     # Write PID for caller to kill
-    with open(KERNEL_PID_FILENAME, 'w') as p:
-        p.write(str(kernel_process.pid))
+    str_kernel_pid = str(kernel_process.pid)
+    os.makedirs(config.KERNEL_PID_DIR, exist_ok=True)
+    with open(os.path.join(config.KERNEL_PID_DIR, str_kernel_pid + ".pid"), 'w') as p:
+        p.write("kernel")
 
     # Wait for kernel connection file to be written
     while True:

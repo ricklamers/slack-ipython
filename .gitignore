@@ -2,4 +2,5 @@ venv/
 *.json
 .env
 __pycache__/
-kernel_process.pid
+process_pids/
+image_cache/

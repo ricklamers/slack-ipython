@@ -1,123 +1,118 @@
 import os
 import re
 import atexit
-import signal
 import subprocess
 import sys
 import json
+import base64
+import pprint
+from uuid import uuid4
 
-from config import IDENT_MAIN, IDENT_KERNEL_MANAGER, KERNEL_PID_FILENAME, SNAKEMQ_PORT, get_logger
-
-import snakemq.link
-import snakemq.packeter
-import snakemq.messaging
-import snakemq.message
-import threading
-import time
-
-from threading import Semaphore
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from dotenv import load_dotenv
 
-load_dotenv()
+import kernel_manager
+import utils
+import config
 
+load_dotenv()
 SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
 SLACK_APP_TOKEN = os.environ["SLACK_APP_TOKEN"]
 
-logger = get_logger()
+logger = config.get_logger()
 
 # Globals mutable
-my_messaging = None
+messaging = None
 channels = set()
-app = None
+# Note, only one kernel_manager_process can be active
+kernel_manager_process = None
 
 
-class FlushMessenger(threading.Thread):
-    def __init__(self, my_messaging, kill_sema):
-        threading.Thread.__init__(self)
-        self.kill_sema = kill_sema
-        self.my_messaging = my_messaging
+def broadcast_to_slack_clients(message, message_type="message", app=None):
+    # Broadcast to all channels that have sent a Slack message
+    if app is None:
+        raise Exception("No app passed")
 
-    def run(self):
-        logger.info("Running message flusher...")
-        while True:
+    # PNG preprocessing step
+    file_path = None
+    if message_type == "image/png":
+        image_dir = "image_cache"
+        os.makedirs(image_dir, exist_ok=True)
+        tmp_path = os.path.join(image_dir, str(uuid4()) + ".png")
 
-            if self.kill_sema.acquire(blocking=False):
-                logger.info("Sema was released to kill thread")
-                sys.exit()
+        with open(tmp_path, "wb") as fh:
+            fh.write(base64.decodebytes(message.encode("utf-8")))
+        file_path = tmp_path
 
-            time.sleep(1)
-            message = snakemq.message.Message(
-                json.dumps({"type": "flush"}).encode("utf-8"), ttl=600
-            )
-            self.my_messaging.send_message(IDENT_KERNEL_MANAGER, message)
+    for channel in channels:
+        try:
+            logger.debug("Sending Slack message %s[truncated]]" % message[:10])
+            if message_type == "message":
+                app.client.chat_postMessage(text=message, channel=channel)
+            elif message_type == "message_raw":
+                app.client.chat_postMessage(
+                    text=message,
+                    blocks=[
+                        {
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": f"```{message}```",
+                            },
+                        }
+                    ],
+                    channel=channel,
+                )
+            elif message_type == "image/png" and file_path is not None:
+                try:
+                    logger.debug("Uploading PNG to Slack")
+                    app.client.files_upload(file=file_path, channels=channel)
+                except Exception as e:
+                    logger.debug(f"{e}[{type(e)}]")
+        except Exception as e:
+            logger.debug(f"{type(e)}[{e}]")
 
+    # File cleanup
+    if file_path is not None:
+        try:
+            os.remove(file_path)
+        except Exception:
+            pass
 
 def start_snakemq(app):
-    global my_messaging
+    global messaging
 
-    my_link = snakemq.link.Link()
-    my_packeter = snakemq.packeter.Packeter(my_link)
-    my_messaging = snakemq.messaging.Messaging(IDENT_MAIN, "", my_packeter)
-    my_link.add_listener(("localhost", SNAKEMQ_PORT))
+    messaging, link = utils.init_snakemq(config.IDENT_MAIN)
 
     def on_recv(conn, ident, message):
-        if ident == IDENT_KERNEL_MANAGER:
-            message = json.loads(message.data.decode("utf-8"))
+        message = json.loads(message.data.decode("utf-8"))
 
-            if message["type"] == "message" or message["type"] == "message_raw":
-                # Broadcast to all channels that have sent a Slack message
-                # TODO: 1:1 kernel <> channel mapping
-                for channel in channels:
-                    try:
-                        if message["type"] == "message":
-                            app.client.chat_postMessage(
-                                text=message["value"], channel=channel
-                            )
-                        elif message["type"] == "message_raw":
-                            app.client.chat_postMessage(
-                                text=message["value"],
-                                blocks=[
-                                    {
-                                        "type": "section",
-                                        "text": {
-                                            "type": "mrkdwn",
-                                            "text": f"```{message['value']}```",
-                                        },
-                                    }
-                                ],
-                                channel=channel,
-                            )
-                    except Exception as e:
-                        logger.debug(f"{type(e)}[{e}]")
+        if message["type"] == "status":
+            if message["value"] == "ready":
+                broadcast_to_slack_clients("Kernel is ready.", app=app)
+        elif message["type"] in ["message", "message_raw", "image/png"]:
+            # TODO: 1:1 kernel <> channel mapping
+            broadcast_to_slack_clients(
+                message["value"], message_type=message["type"], app=app
+            )
 
-    # Start FlushMessenger
-    kill_sema = Semaphore()
-    t = FlushMessenger(my_messaging, kill_sema)
-    t.start()
-
-    def end_thread():
-        kill_sema.release()
-
-    atexit.register(end_thread)
-
-    my_messaging.on_message_recv.add(on_recv)
+    messaging.on_message_recv.add(on_recv)
     logger.info("Starting snakemq loop")
-    my_link.loop()
+    link.loop()
 
 
 def start_kernel_manager():
+    global kernel_manager_process
     kernel_manager_process = subprocess.Popen([sys.executable, "kernel_manager.py"])
-    
-    def cleanup():
-        kernel_manager_process.kill()
 
-        # Find kernel PID to kill
-        with open(KERNEL_PID_FILENAME, 'r') as f:
-            os.kill(int(f.read()), signal.SIGKILL)
 
-    atexit.register(cleanup)
+def stop_kernel_manager():
+    if kernel_manager_process:
+        kernel_manager_process.terminate()
+        kernel_manager.cleanup_kernels()
+    else:
+        raise Exception("No active kernel_manager_process!")
 
 
 def start_bot():
@@ -132,32 +127,28 @@ def start_bot():
 
         channels.add(dm_channel)
 
-        if message_text.startswith("/command"):
-            if message_text == "/command restart":
-                # restart kernel
-                pass
-            elif message_text == "/command test":
+        if message_text.startswith(".kernel"):
+            if message_text == ".kernel restart":
+                say(text="Restarting kernel...", channel=dm_channel)
+                stop_kernel_manager()
+                start_kernel_manager()
+            elif message_text == ".kernel test":
                 say(text="I'm alive.", channel=dm_channel)
         else:
-            message_obj = snakemq.message.Message(
-                json.dumps({"type": "execute", "value": message_text}).encode("utf-8"),
-                ttl=600,
+            logger.debug("Rcvd Slack msg: %s" % message_text)
+            utils.send_json(
+                messaging,
+                {"type": "execute", "value": message_text},
+                config.IDENT_KERNEL_MANAGER,
             )
-            my_messaging.send_message("kernel_manager", message_obj)
 
     handler = SocketModeHandler(app, SLACK_APP_TOKEN)
     handler.connect()
     return app
 
 
-def exit_kernel_manager():
-    message = snakemq.message.Message(
-        json.dumps({"type": "exit"}).encode("utf-8"), ttl=600
-    )
-    my_messaging.send_message(IDENT_KERNEL_MANAGER, message)
-    logger.debug("End send...")
-
 if __name__ == "__main__":
     app = start_bot()
     start_kernel_manager()
+    atexit.register(stop_kernel_manager)
     start_snakemq(app)
