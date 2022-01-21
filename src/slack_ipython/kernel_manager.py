@@ -46,7 +46,10 @@ def cleanup_kernels():
             try:
                 pid = int(filename.split(".pid")[0])
                 logger.debug("Killing process with pid %s" % pid)
-                os.kill(pid, signal.SIGKILL)
+                if os.name == "nt":
+                    os.kill(pid, signal.CTRL_BREAK_EVENT)
+                else:
+                    os.kill(pid, signal.SIGKILL)
                 os.remove(fp)
             except Exception as e:
                 logger.debug(e)
