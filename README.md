@@ -14,6 +14,8 @@ To start the bot, simply run:
 
 For detailed output, add `DEBUG=true` as an environment variable.
 
+Create a `.env` (or set these environment variables yourself).
+
 ```
 SLACK_APP_TOKEN="xapp-..."
 SLACK_BOT_TOKEN="xoxb-..."
