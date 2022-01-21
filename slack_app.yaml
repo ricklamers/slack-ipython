@@ -1,0 +1,25 @@
+display_information:
+  name: PyBot
+  description: Ask your questions (in Python)
+  background_color: "#212121"
+features:
+  bot_user:
+    display_name: PyBot
+    always_online: false
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - im:history
+      - im:read
+      - im:write
+      - files:write
+settings:
+  event_subscriptions:
+    bot_events:
+      - message.im
+  interactivity:
+    is_enabled: true
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false

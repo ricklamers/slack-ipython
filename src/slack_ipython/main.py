@@ -5,24 +5,24 @@ import subprocess
 import sys
 import json
 import base64
-import pprint
+import pathlib
+
 from uuid import uuid4
 
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from dotenv import load_dotenv
 
-import kernel_manager
-import utils
-import config
+import slack_ipython.kernel_manager as kernel_manager
+import slack_ipython.utils as utils
+import slack_ipython.config as config
 
 load_dotenv()
 SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
 SLACK_APP_TOKEN = os.environ["SLACK_APP_TOKEN"]
 
+# Globals
 logger = config.get_logger()
-
-# Globals mutable
 messaging = None
 channels = set()
 # Note, only one kernel_manager_process can be active
@@ -80,6 +80,7 @@ def broadcast_to_slack_clients(message, message_type="message", app=None):
         except Exception:
             pass
 
+
 def start_snakemq(app):
     global messaging
 
@@ -104,7 +105,12 @@ def start_snakemq(app):
 
 def start_kernel_manager():
     global kernel_manager_process
-    kernel_manager_process = subprocess.Popen([sys.executable, "kernel_manager.py"])
+    kernel_manager_script_path = os.path.join(
+        pathlib.Path(__file__).parent.resolve(), "kernel_manager.py"
+    )
+    kernel_manager_process = subprocess.Popen(
+        [sys.executable, kernel_manager_script_path]
+    )
 
 
 def stop_kernel_manager():
@@ -115,10 +121,34 @@ def stop_kernel_manager():
         raise Exception("No active kernel_manager_process!")
 
 
+def generate_help():
+    return "The following commands are available: \n" + "".join(
+        map(lambda x: "\n .kernel " + x, ["help", "restart", "version"])
+    )
+
+
 def start_bot():
     global channels
 
     app = App(token=SLACK_BOT_TOKEN, name="Jarvis")
+
+    @app.event({
+        "type": "message",
+        "subtype": "message_changed"
+    })
+    def handler_changed(message, _):
+        # Register handler to satisfy Bolt
+        logger.debug(message)
+        pass
+
+    @app.event({
+        "type": "message",
+        "subtype": "message_deleted"
+    })
+    def handler_delete(message, _):
+        # Register handler to satisfy Bolt
+        logger.debug(message)
+        pass
 
     @app.message(re.compile(".*"))
     def parse(message, say):
@@ -132,13 +162,27 @@ def start_bot():
                 say(text="Restarting kernel...", channel=dm_channel)
                 stop_kernel_manager()
                 start_kernel_manager()
-            elif message_text == ".kernel test":
-                say(text="I'm alive.", channel=dm_channel)
+            elif message_text == ".kernel help":
+                say(text=generate_help(), channel=dm_channel)
+            elif message_text == ".kernel version":
+                utils.send_json(
+                    messaging,
+                    {"type": "execute", "value": "!python --version"},
+                    config.IDENT_KERNEL_MANAGER,
+                )
+            else:
+                say(text=generate_help(), channel=dm_channel)
         else:
             logger.debug("Rcvd Slack msg: %s" % message_text)
+
+            # Filter tags from incoming messages (for auto URL conversion)
+            filtered_message_text = re.sub('<(.*?)>', '\\1', message_text)
+            
+            logger.debug("Fltrd Slack msg: %s" % filtered_message_text)
+
             utils.send_json(
                 messaging,
-                {"type": "execute", "value": message_text},
+                {"type": "execute", "value": filtered_message_text},
                 config.IDENT_KERNEL_MANAGER,
             )
 
@@ -147,7 +191,7 @@ def start_bot():
     return app
 
 
-if __name__ == "__main__":
+def main():
     app = start_bot()
     start_kernel_manager()
     atexit.register(stop_kernel_manager)

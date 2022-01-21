@@ -5,12 +5,11 @@ import snakemq.message
 import json
 import re
 
-import config
+import slack_ipython.config as config
+
 
 def send_json(messaging, message, identity):
-    message = snakemq.message.Message(
-        json.dumps(message).encode("utf-8"), ttl=600
-    )
+    message = snakemq.message.Message(json.dumps(message).encode("utf-8"), ttl=600)
     messaging.send_message(identity, message)
 
 
@@ -20,13 +19,13 @@ def init_snakemq(ident, init_type="listen"):
     messaging = snakemq.messaging.Messaging(ident, "", packeter)
     if init_type == "listen":
         link.add_listener(("localhost", config.SNAKEMQ_PORT))
-    elif init_type =="connect":
+    elif init_type == "connect":
         link.add_connector(("localhost", config.SNAKEMQ_PORT))
     else:
         raise Exception("Unsupported init type.")
     return messaging, link
 
+
 def escape_ansi(line):
     ansi_escape = re.compile(r"(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]")
     return ansi_escape.sub("", line)
-

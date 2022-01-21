@@ -5,3 +5,4 @@ __pycache__/
 process_pids/
 image_cache/
 .vscode/
+*.egg-info/

@@ -4,19 +4,22 @@ import os
 import queue
 import json
 import signal
+import pathlib
 import threading
 import time
 import atexit
+import traceback
 
 from time import sleep
 from jupyter_client import BlockingKernelClient
 
-import config
-import utils
+import slack_ipython.utils as utils
+import slack_ipython.config as config
 
 # Set up globals
 messaging = None
 logger = config.get_logger()
+
 
 class FlushingThread(threading.Thread):
     def __init__(self, kc, kill_sema):
@@ -35,13 +38,14 @@ class FlushingThread(threading.Thread):
             flush_kernel_msgs(self.kc)
             time.sleep(1)
 
+
 def cleanup_kernels():
     for filename in os.listdir(config.KERNEL_PID_DIR):
         fp = os.path.join(config.KERNEL_PID_DIR, filename)
         if os.path.isfile(fp):
             try:
                 pid = int(filename.split(".pid")[0])
-                logger.debug("Killing PID %s" % pid)
+                logger.debug("Killing process with pid %s" % pid)
                 os.kill(pid, signal.SIGKILL)
                 os.remove(fp)
             except Exception as e:
@@ -66,7 +70,7 @@ def start_snakemq(kc):
     messaging.on_message_recv.add(on_recv)
 
     start_flusher(kc)
-    
+
     # Send alive
     utils.send_json(messaging, {"type": "status", "value": "ready"}, config.IDENT_MAIN)
 
@@ -88,7 +92,9 @@ def start_flusher(kc):
 
 
 def send_message(message, message_type="message"):
-    utils.send_json(messaging, {"type": message_type, "value": message}, config.IDENT_MAIN)
+    utils.send_json(
+        messaging, {"type": message_type, "value": message}, config.IDENT_MAIN
+    )
 
 
 def flush_kernel_msgs(kc, tries=1, timeout=0.2):
@@ -108,11 +114,11 @@ def flush_kernel_msgs(kc, tries=1, timeout=0.2):
                         # Convert to Slack upload
                         send_message(
                             msg["content"]["data"]["image/png"],
-                            message_type="image/png"
+                            message_type="image/png",
                         )
                     elif "text/plain" in msg["content"]["data"]:
                         send_message(msg["content"]["data"]["text/plain"])
-                    
+
                 elif msg["msg_type"] == "stream":
                     logger.debug("Received stream output %s" % msg["content"]["text"])
                     send_message(msg["content"]["text"])
@@ -126,8 +132,12 @@ def flush_kernel_msgs(kc, tries=1, timeout=0.2):
                 if hit_empty == tries:
                     # Empty queue for one second, give back control
                     break
+            except (ValueError, IndexError):
+                # get_iopub_msg suffers from message fetch errors
+                break
             except Exception as e:
                 logger.debug(f"{e} [{type(e)}")
+                logger.debug(traceback.format_exc())
                 break
     except Exception as e:
         logger.debug(f"{e} [{type(e)}")
@@ -141,19 +151,23 @@ def start_kernel():
     if os.path.isdir(kernel_connection_file):
         os.rmdir(kernel_connection_file)
 
+    launch_kernel_script_path = os.path.join(
+        pathlib.Path(__file__).parent.resolve(), "launch_kernel.py"
+    )
     kernel_process = subprocess.Popen(
         [
             sys.executable,
-            "launch_kernel.py",
+            launch_kernel_script_path,
             "--IPKernelApp.connection_file",
             kernel_connection_file,
             "--matplotlib=inline",
+            "--quiet",
         ]
     )
     # Write PID for caller to kill
     str_kernel_pid = str(kernel_process.pid)
     os.makedirs(config.KERNEL_PID_DIR, exist_ok=True)
-    with open(os.path.join(config.KERNEL_PID_DIR, str_kernel_pid + ".pid"), 'w') as p:
+    with open(os.path.join(config.KERNEL_PID_DIR, str_kernel_pid + ".pid"), "w") as p:
         p.write("kernel")
 
     # Wait for kernel connection file to be written

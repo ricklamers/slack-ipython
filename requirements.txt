@@ -1,6 +1,6 @@
+wheel
 ipykernel
 matplotlib
 slack_bolt
 python-dotenv
 snakemq
-wheel
