@@ -1,6 +1,7 @@
 # Slack IPython bot 🤯
 
 **Security warning: this effectively gives full access to wherever you run this. Run in a throwaway VM/isolated environment.**
+Potential security idea [#1](/../../issues/1)
 
 One Slack bot to rule them all. PyBot. Just send Python code as a message.
 
