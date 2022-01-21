@@ -46,11 +46,15 @@ def cleanup_kernels():
             try:
                 pid = int(filename.split(".pid")[0])
                 logger.debug("Killing process with pid %s" % pid)
-                if os.name == "nt":
-                    os.kill(pid, signal.CTRL_BREAK_EVENT)
-                else:
-                    os.kill(pid, signal.SIGKILL)
                 os.remove(fp)
+                try:
+                    if os.name == "nt":
+                        os.kill(pid, signal.CTRL_BREAK_EVENT)
+                    else:
+                        os.kill(pid, signal.SIGKILL)
+                except Exception:
+                    # Windows process killing is flaky
+                    pass
             except Exception as e:
                 logger.debug(e)
 
@@ -178,7 +182,13 @@ def start_kernel():
         if not os.path.isfile(kernel_connection_file):
             sleep(0.1)
         else:
-            break
+            # Keep looping if JSON parsing fails, file may be partially written
+            try:
+                with open(kernel_connection_file, 'r') as fp:
+                    json.load(fp)
+                break
+            except json.JSONDecodeError:
+                pass
 
     # Client
     kc = BlockingKernelClient(connection_file=kernel_connection_file)

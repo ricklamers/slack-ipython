@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="slack-ipython",
-    version="0.0.1",
+    version="0.0.2",
     author="R. Lamers",
     author_email="ricklamers@gmail.com",
     description="A Python Slack bot through IPython",

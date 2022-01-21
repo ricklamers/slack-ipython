@@ -1,8 +1,16 @@
+# IDE
+.vscode/
+
+# Python
 venv/
-*.json
-.env
+*.egg-info/
+dist/
 __pycache__/
+
+# Program
 process_pids/
 image_cache/
-.vscode/
-*.egg-info/
+*.json
+
+# Secrets
+.env
