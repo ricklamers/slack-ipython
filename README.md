@@ -1,8 +1,5 @@
 # Slack IPython bot 🤯
 
-**Security warning: this effectively gives full access to wherever you run this. Run in a throwaway VM/isolated environment.**
-Potential security idea [#1](/../../issues/1)
-
 One Slack bot to rule them all. PyBot. Just send Python code as a message.
 
 ![PyBot demo](assets/images/demo.png)
@@ -26,6 +23,8 @@ SLACK_APP_TOKEN="xapp-..."
 SLACK_BOT_TOKEN="xoxb-..."
 APPROVED_SLACK_MEMBER_IDS="U01LXXXXXX,U01LXXXXXXX"
 ```
+
+**Security warning: this effectively gives full access to wherever you run this. Make sure you only added Slack member IDs of people you trust.**
 
 ## Configure your Slack app
 First create a new Slack app in the Slack [app dashboard](https://api.slack.com/apps/).
