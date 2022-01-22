@@ -1,0 +1,1 @@
+worker: slack-ipython

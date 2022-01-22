@@ -23,8 +23,12 @@ SLACK_APP_TOKEN="xapp-..."
 SLACK_BOT_TOKEN="xoxb-..."
 APPROVED_SLACK_MEMBER_IDS="U01LXXXXXX,U01LXXXXXXX"
 ```
-
 **Security warning: this effectively gives full access to wherever you run this. Make sure you only add Slack member IDs of people you trust.**
+
+## Deploy on Heroku
+
+[![Deploy on Heroku](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/ricklamers/slack-ipython)
+
 
 ## Configure your Slack app
 First create a new Slack app in the Slack [app dashboard](https://api.slack.com/apps/).
