@@ -5,7 +5,7 @@
   "logo": "https://github.com/ricklamers/slack-ipython/raw/main/assets/images/python-logo.png",
   "keywords": ["python", "slack", "ipython", "kernel"],
   "scripts": {
-    "postdeploy": "python setup.py install"
+    "postinstall": "python setup.py install"
   },
   "env": {
     "SLACK_APP_TOKEN": {
