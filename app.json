@@ -3,5 +3,19 @@
   "description": "A Python Jupyter Kernel in Slack. Just send Python code as a message.",
   "repository": "https://github.com/ricklamers/slack-ipython",
   "logo": "https://github.com/ricklamers/slack-ipython/raw/main/assets/images/python-logo.png",
-  "keywords": ["python", "slack", "ipython", "kernel"]
+  "keywords": ["python", "slack", "ipython", "kernel"],
+  "env": {
+    "SLACK_APP_TOKEN": {
+      "description": "Slack App Token",
+      "value": "xapp-..."
+    },
+    "SLACK_BOT_TOKEN": {
+      "description": "Slack Bot Token",
+      "value": "xoxb-..."
+    },
+    "APPROVED_SLACK_MEMBER_IDS": {
+      "description": "Slack member IDs that can use the bot. Separate by comma.",
+      "value": "U01LXXXXXX,U01LXXXXXXX"
+    }
+  }
 }
