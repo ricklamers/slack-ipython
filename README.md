@@ -19,6 +19,7 @@ Create a `.env` (or set these environment variables yourself).
 ```
 SLACK_APP_TOKEN="xapp-..."
 SLACK_BOT_TOKEN="xoxb-..."
+APPROVED_SLACK_MEMBER_IDS="U01LXXXXXX,U01LXXXXXXX"
 ```
 
 ## Configure your Slack app

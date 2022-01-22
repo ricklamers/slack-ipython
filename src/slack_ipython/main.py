@@ -20,6 +20,7 @@ import slack_ipython.config as config
 load_dotenv()
 SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
 SLACK_APP_TOKEN = os.environ["SLACK_APP_TOKEN"]
+APPROVED_MEMBER_IDS = os.environ["APPROVED_SLACK_MEMBER_IDS"].split(",")
 
 # Globals
 logger = config.get_logger()
@@ -152,9 +153,14 @@ def start_bot():
 
     @app.message(re.compile(".*"))
     def parse(message, say):
+
+        # Security gate
+        if str(message['user']) not in APPROVED_MEMBER_IDS:
+            return
+
         message_text = message["text"]
         dm_channel = message["channel"]
-
+        
         channels.add(dm_channel)
 
         if message_text.startswith(".kernel"):
