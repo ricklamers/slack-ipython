@@ -4,9 +4,14 @@
   "repository": "https://github.com/ricklamers/slack-ipython",
   "logo": "https://github.com/ricklamers/slack-ipython/raw/main/assets/images/python-logo.png",
   "keywords": ["python", "slack", "ipython", "kernel"],
-  "scripts": {
-    "postinstall": "python setup.py install"
-  },
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    },
+    {
+      "url": "https://github.com/niteoweb/heroku-buildpack-shell.git"
+    }
+  ],
   "env": {
     "SLACK_APP_TOKEN": {
       "description": "Slack App Token",
