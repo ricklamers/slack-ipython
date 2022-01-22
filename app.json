@@ -4,6 +4,9 @@
   "repository": "https://github.com/ricklamers/slack-ipython",
   "logo": "https://github.com/ricklamers/slack-ipython/raw/main/assets/images/python-logo.png",
   "keywords": ["python", "slack", "ipython", "kernel"],
+  "scripts": {
+    "postdeploy": "python setup.py install"
+  },
   "env": {
     "SLACK_APP_TOKEN": {
       "description": "Slack App Token",
