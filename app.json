@@ -17,5 +17,9 @@
       "description": "Slack member IDs that can use the bot. Separate by comma.",
       "value": "U01LXXXXXX,U01LXXXXXXX"
     }
+  },
+  "worker": {
+    "quantity": 1,
+    "size": "hobby"
   }
 }
