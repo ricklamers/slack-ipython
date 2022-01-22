@@ -18,8 +18,10 @@
       "value": "U01LXXXXXX,U01LXXXXXXX"
     }
   },
-  "worker": {
-    "quantity": 1,
-    "size": "hobby"
+  "formation": {
+    "worker": {
+      "quantity": 1,
+      "size": "hobby"
+    }
   }
 }
