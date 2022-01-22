@@ -1,0 +1,7 @@
+{
+  "name": "slack-ipython",
+  "description": "A Python Jupyter Kernel in Slack. Just send Python code as a message.",
+  "repository": "https://github.com/ricklamers/slack-ipython",
+  "logo": "https://github.com/ricklamers/slack-ipython/raw/main/assets/images/python-logo.png",
+  "keywords": ["python", "slack", "ipython", "kernel"]
+}

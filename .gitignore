@@ -11,6 +11,7 @@ __pycache__/
 process_pids/
 image_cache/
 *.json
+!app.json
 
 # Secrets
 .env
